@@ -27,23 +27,17 @@ import { Bug } from "./components/bug";
   player.position.set(app.screen.width / 2, app.screen.height / 2);
   app.stage.addChild(player);
 
-  // const player = new Circle(app.screen.width / 2, app.screen.height / 2, 30);
-  // app.stage.addChild(player);
-
   app.stage.eventMode = "static";
   app.stage.hitArea = new Rectangle(0, 0, app.screen.width, app.screen.height);
 
-  let pointerDownX: number | null = null;
-  let pointerDownY: number | null = null;
+  let pointerDownPosition: { x: number; y: number } | null = null;
   let rotateCooldown = 0;
   app.stage.on("pointerdown", (event) => {
-    pointerDownX = event.global.x;
-    pointerDownY = event.global.y;
+    pointerDownPosition = { x: event.global.x, y: event.global.y };
   });
   // Use document listener to also fire on events outside canvas.
   document.addEventListener("pointerup", () => {
-    pointerDownX = null;
-    pointerDownY = null;
+    pointerDownPosition = null;
     rotateCooldown = 20;
   });
 
@@ -106,10 +100,10 @@ import { Bug } from "./components/bug";
     if (rotateCooldown > 0) {
       rotateCooldown = Math.max(0, rotateCooldown - time.deltaTime);
     } else if (
-      !(pointerDownX && pointerDownY) ||
+      !pointerDownPosition ||
       Math.sqrt(
-        (pointerDownX - pointerLocation.x) ** 2 +
-          (pointerDownY - pointerLocation.y) ** 2,
+        (pointerDownPosition.x - pointerLocation.x) ** 2 +
+          (pointerDownPosition.y - pointerLocation.y) ** 2,
       ) < 50
     ) {
       const target = app.renderer.events.pointer.global;
@@ -117,12 +111,12 @@ import { Bug } from "./components/bug";
         Math.atan2(target.y - player.y, target.x - player.x) - Math.PI / 2;
       const rawDiff = targetRotation - player.rotation;
       const shortestDiff = Math.atan2(Math.sin(rawDiff), Math.cos(rawDiff));
-      player.rotation += shortestDiff * 0.2 * time.deltaTime;
+      player.rotation += shortestDiff * 0.1 * time.deltaTime;
     } else {
       const targetRotation =
         Math.atan2(
-          pointerDownY - pointerLocation.y,
-          pointerDownX - pointerLocation.x,
+          pointerDownPosition.y - pointerLocation.y,
+          pointerDownPosition.x - pointerLocation.x,
         ) -
         Math.PI / 2;
       const rawDiff = targetRotation - player.rotation;
