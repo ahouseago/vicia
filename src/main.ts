@@ -1,5 +1,6 @@
-import { Application, Assets, Point, Rectangle, Sprite } from "pixi.js";
+import { Application, Assets, Rectangle, Sprite } from "pixi.js";
 import { Bug } from "./components/bug";
+import { Projectile } from "./components/projectile";
 
 (async () => {
   // Create a new application
@@ -13,12 +14,14 @@ import { Bug } from "./components/bug";
 
   const bugTexture = await Assets.load("/assets/bug.svg");
   const bug = new Bug(bugTexture, {
-    velocity: new Point(),
+    velocity: { x: 0, y: 0 },
     maxSpeed: 1,
     acceleration: 0.4,
   });
   bug.position.set(app.screen.width / 2, app.screen.height - 50);
   app.stage.addChild(bug);
+
+  const rockTexture = await Assets.load("/assets/rock.png");
 
   const playerTexture = await Assets.load("/assets/character.png");
   const player = new Sprite(playerTexture);
@@ -35,8 +38,38 @@ import { Bug } from "./components/bug";
   app.stage.on("pointerdown", (event) => {
     pointerDownPosition = { x: event.global.x, y: event.global.y };
   });
+
+  const rocks: Projectile[] = [];
+
   // Use document listener to also fire on events outside canvas.
-  document.addEventListener("pointerup", () => {
+  document.addEventListener("pointerup", (event) => {
+    if (!pointerDownPosition) {
+      return;
+    }
+
+    const dx = pointerDownPosition.x - event.x;
+    const dy = pointerDownPosition.y - event.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+
+    if (distance > 50) {
+      const direction = Math.atan2(
+        pointerDownPosition.y - event.y,
+        pointerDownPosition.x - event.x,
+      );
+      const velocity = {
+        x: Math.cos(direction) * distance * 0.1,
+        y: Math.sin(direction) * distance * 0.1,
+      };
+
+      const rock = new Projectile(rockTexture, {
+        velocity,
+        spin: true,
+      });
+      rock.position.set(player.x, player.y);
+      app.stage.addChild(rock);
+      rocks.push(rock);
+    }
+
     pointerDownPosition = null;
     rotateCooldown = 20;
   });
@@ -94,6 +127,10 @@ import { Bug } from "./components/bug";
     }
 
     bug.moveTowards(player.position, time.deltaTime);
+
+    for (const rock of rocks) {
+      rock.update(time.deltaTime);
+    }
 
     // Player rotation
     const pointerLocation = app.renderer.events.pointer.global;

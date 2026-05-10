@@ -1,13 +1,13 @@
 import { Point, Sprite, Texture } from "pixi.js";
 
 type BugProperties = {
-  velocity: Point;
+  velocity: { x: number; y: number };
   maxSpeed: number;
   acceleration: number;
 };
 
 export class Bug extends Sprite {
-  velocity: Point;
+  velocity: { x: number; y: number };
   maxSpeed: number;
   acceleration: number;
 
