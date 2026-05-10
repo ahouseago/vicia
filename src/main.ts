@@ -1,4 +1,4 @@
-import { Application, Assets, Point, Rectangle, Sprite } from "pixi.js";
+import { Application, Assets, Point, Rectangle } from "pixi.js";
 import { Bug } from "./components/bug";
 
 (async () => {
@@ -11,20 +11,13 @@ import { Bug } from "./components/bug";
   // Append the application canvas to the document body
   document.getElementById("pixi-container")?.appendChild(app.canvas);
 
-  // Load the bug texture
-  const texture = await Assets.load("/assets/bug.svg");
-
-  // Create a bug Sprite
-  const bug = new Bug(texture, {
+  const bugTexture = await Assets.load("/assets/bug.svg");
+  const bug = new Bug(bugTexture, {
     velocity: new Point(),
     maxSpeed: 1,
     acceleration: 0.4,
   });
-
-  // Move the bug to the centre of the screen
   bug.position.set(app.screen.width / 2, app.screen.height / 2);
-
-  // Add the bug to the stage
   app.stage.addChild(bug);
 
   app.stage.eventMode = "static";
