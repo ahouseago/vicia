@@ -1,6 +1,7 @@
 import { Application, Assets, Rectangle, Sprite } from "pixi.js";
 import { Bug } from "./components/bug";
 import { Projectile } from "./components/projectile";
+import { lerp } from "./utils/lerp";
 
 (async () => {
   // Create a new application
@@ -13,13 +14,26 @@ import { Projectile } from "./components/projectile";
   document.getElementById("pixi-container")?.appendChild(app.canvas);
 
   const bugTexture = await Assets.load("/assets/bug.svg");
-  const bug = new Bug(bugTexture, {
-    velocity: { x: 0, y: 0 },
-    maxSpeed: 1,
-    acceleration: 0.4,
-  });
-  bug.position.set(app.screen.width / 2, app.screen.height - 50);
-  app.stage.addChild(bug);
+
+  const bugs: Bug[] = [];
+  const newBug = () => {
+    const bug = new Bug(bugTexture, {
+      maxSpeed: 1,
+      acceleration: 0.4,
+      size: Math.random() * 9 + 1,
+    });
+    const angle = Math.random() * Math.PI * 2;
+    bug.position.set(
+      app.screen.width / 2 + Math.cos(angle) * (app.screen.width / 2 + 100),
+      app.screen.height / 2 + Math.sin(angle) * (app.screen.height / 2 + 100),
+    );
+    app.stage.addChild(bug);
+    bugs.push(bug);
+  };
+
+  for (let i = 0; i < 5; i++) {
+    newBug();
+  }
 
   const rockTexture = await Assets.load("/assets/rock.png");
 
@@ -75,6 +89,7 @@ import { Projectile } from "./components/projectile";
   });
 
   const playerSpeed = 5;
+  let score = 0;
 
   const keysDown = new Set<string>();
   document.addEventListener("keydown", (event) => {
@@ -126,10 +141,41 @@ import { Projectile } from "./components/projectile";
       }
     }
 
-    bug.moveTowards(player.position, time.deltaTime);
+    if (bugs.length < 10 && Math.random() < 0.01) {
+      newBug();
+    }
+
+    for (const bug of bugs) {
+      bug.update(player.position, time.deltaTime);
+    }
 
     for (const rock of rocks) {
       rock.update(time.deltaTime);
+
+      for (let i = bugs.length - 1; i >= 0; i--) {
+        const bug = bugs[i];
+        if (!rock.knockback && !bug.knockback && isColliding(rock, bug)) {
+          const speed = Math.sqrt(
+            rock.velocity.x * rock.velocity.x +
+              rock.velocity.y * rock.velocity.y,
+          );
+          rock.knockback = {
+            x: (rock.x - bug.x) * speed * 0.02,
+            y: (rock.y - bug.y) * speed * 0.02,
+          };
+          bug.knockback = {
+            x: (bug.x - rock.x) * speed * 0.005,
+            y: (bug.y - rock.y) * speed * 0.005,
+          };
+          bug.hp -= lerp(1, 3, speed / 20);
+        }
+        if (!bug.knockback && bug.hp <= 0) {
+          score++;
+          console.log("Score:", score);
+          app.stage.removeChild(bug);
+          bugs.splice(i, 1);
+        }
+      }
     }
 
     // Player rotation
@@ -162,3 +208,16 @@ import { Projectile } from "./components/projectile";
     }
   });
 })();
+
+type Collidable = {
+  x: number;
+  y: number;
+  width: number;
+};
+
+const isColliding = (a: Collidable, b: Collidable) => {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  const distanceSquared = dx * dx + dy * dy;
+  return distanceSquared <= (a.width + b.width) ** 2;
+};

@@ -7,6 +7,7 @@ type ProjectileProperties = {
 
 export class Projectile extends Sprite {
   velocity: { x: number; y: number };
+  knockback?: { x: number; y: number };
   spin: boolean;
 
   constructor(texture: Texture, props: ProjectileProperties) {
@@ -21,6 +22,22 @@ export class Projectile extends Sprite {
   }
 
   update(deltaTime: number) {
+    if (this.knockback) {
+      if (
+        Math.abs(this.knockback.x) < 0.01 &&
+        Math.abs(this.knockback.y) < 0.01
+      ) {
+        this.knockback = { x: 0, y: 0 };
+        return;
+      }
+      this.position.x += this.knockback.x * deltaTime;
+      this.position.y += this.knockback.y * deltaTime;
+      this.knockback.x *= 0.9;
+      this.knockback.y *= 0.9;
+
+      return;
+    }
+
     if (
       Math.abs(this.velocity.x) < 0.005 &&
       Math.abs(this.velocity.y) < 0.005
