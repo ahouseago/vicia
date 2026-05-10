@@ -27,13 +27,13 @@ export class Bug extends Sprite {
       Math.atan2(target.y - this.y, target.x - this.x) + Math.PI / 2;
     const rawDiff = targetRotation - this.rotation;
     const shortestDiff = Math.atan2(Math.sin(rawDiff), Math.cos(rawDiff));
-    this.rotation = this.rotation + shortestDiff * 0.05 * deltaTime;
+    this.rotation += shortestDiff * 0.05 * deltaTime;
 
     const dx = target.x - this.position.x;
     const dy = target.y - this.position.y;
     const distance = Math.sqrt(dx * dx + dy * dy);
 
-    if (distance > Math.max(this.width / 2, this.height / 2)) {
+    if (distance > Math.max(this.width, this.height)) {
       const angle = this.rotation - Math.PI / 2;
       this.velocity.x += Math.cos(angle) * this.acceleration;
       this.velocity.y += Math.sin(angle) * this.acceleration;
