@@ -1,5 +1,6 @@
-import { Point, Sprite, Texture } from "pixi.js";
+import { Container, Point, Sprite, Texture } from "pixi.js";
 import { lerp } from "../utils/lerp";
+import { isColliding } from "../utils/collision";
 
 type BugProperties = {
   maxSpeed: number;
@@ -39,7 +40,7 @@ export class Bug extends Sprite {
     }
   }
 
-  update(target: Point, deltaTime: number) {
+  update(target: Container, deltaTime: number) {
     if (this.knockback) {
       if (
         Math.abs(this.knockback.x) < 0.01 &&
@@ -52,6 +53,10 @@ export class Bug extends Sprite {
       this.position.y += this.knockback.y * deltaTime;
       this.knockback.x *= 0.9;
       this.knockback.y *= 0.9;
+
+      if (this.hp <= 0) {
+        this.alpha *= 0.9;
+      }
 
       return;
     }
@@ -66,7 +71,7 @@ export class Bug extends Sprite {
     const dy = target.y - this.position.y;
     const distanceSquared = dx * dx + dy * dy;
 
-    if (distanceSquared > Math.max(this.width, this.height) ** 2) {
+    if (!isColliding(this, target)) {
       const angle = this.rotation - Math.PI / 2;
       this.velocity.x += Math.cos(angle) * this.acceleration;
       this.velocity.y += Math.sin(angle) * this.acceleration;

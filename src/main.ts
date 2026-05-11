@@ -2,6 +2,7 @@ import {
   Application,
   Assets,
   Container,
+  Graphics,
   Rectangle,
   Sprite,
   Text,
@@ -9,6 +10,7 @@ import {
 import { Bug } from "./components/bug";
 import { Projectile } from "./components/projectile";
 import { lerp } from "./utils/lerp";
+import { isColliding } from "./utils/collision";
 
 (async () => {
   // Create a new application
@@ -138,7 +140,15 @@ import { lerp } from "./utils/lerp";
     [Movement.Right]: "d",
   };
 
-  app.ticker.add((time) => {
+  // const debugGraphics = new Graphics();
+  // app.stage.addChild(debugGraphics);
+  //
+  // const drawBounds = (sprite: Sprite, colour: number) => {
+  //   debugGraphics.circle(sprite.x, sprite.y, sprite.width / 2);
+  //   debugGraphics.stroke({ width: 2, color: colour });
+  // };
+
+  const ticker = app.ticker.add((time) => {
     if (keysDown.size > 0) {
       for (const m of [
         Movement.Up,
@@ -171,7 +181,39 @@ import { lerp } from "./utils/lerp";
     }
 
     for (const bug of bugs) {
-      bug.update(player.position, time.deltaTime);
+      bug.update(player, time.deltaTime);
+      if (isColliding(player, bug)) {
+        // Reset game
+        ticker.stop();
+        const scoreGraphic = new Graphics();
+        const width = Math.min(500, app.screen.width - 20);
+        const height = Math.min(300, app.screen.height - 20);
+        scoreGraphic.rect(
+          app.screen.width / 2 - width / 2,
+          app.screen.height / 2 - height / 2,
+          width,
+          height,
+        );
+        scoreGraphic.fill({ color: 0xffffff, alpha: 0.6 });
+        app.stage.addChild(scoreGraphic);
+
+        const finalScoreText = new Text({
+          text: `Game Over!\nFinal Score: ${score}`,
+          style: {
+            fill: "#000",
+            fontSize: lerp(16, 64, width / 500),
+            align: "center",
+          },
+        });
+        finalScoreText.anchor.set(0.5);
+        finalScoreText.position.set(
+          app.screen.width / 2,
+          app.screen.height / 2,
+        );
+        app.stage.addChild(finalScoreText);
+
+        return;
+      }
     }
 
     for (let r = rocks.length - 1; r >= 0; r--) {
@@ -240,18 +282,10 @@ import { lerp } from "./utils/lerp";
       const shortestDiff = Math.atan2(Math.sin(rawDiff), Math.cos(rawDiff));
       player.rotation += shortestDiff * 0.2 * time.deltaTime;
     }
+
+    // debugGraphics.clear();
+    // drawBounds(player, 0x00ff00);
+    // for (const bug of bugs) drawBounds(bug, 0xff0000);
+    // for (const rock of rocks) drawBounds(rock, 0x00aaff);
   });
 })();
-
-type Collidable = {
-  x: number;
-  y: number;
-  width: number;
-};
-
-const isColliding = (a: Collidable, b: Collidable) => {
-  const dx = a.x - b.x;
-  const dy = a.y - b.y;
-  const distanceSquared = dx * dx + dy * dy;
-  return distanceSquared <= (a.width + b.width) ** 2;
-};
