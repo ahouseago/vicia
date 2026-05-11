@@ -7,41 +7,28 @@ type ProjectileProperties = {
 
 export class Projectile extends Sprite {
   velocity: { x: number; y: number };
-  knockback?: { x: number; y: number };
-  spin: boolean;
+  spin: number;
+
+  // After lying stationary, how many ms before the projectile disappears
+  timeout: number = 10_000;
 
   constructor(texture: Texture, props: ProjectileProperties) {
     super(texture);
 
     // Center the sprite's anchor point
     this.anchor.set(0.5);
-    this.scale.set(0.5);
+    this.scale.set(Math.random() * 0.2 + 0.4);
 
     this.velocity = props.velocity;
-    this.spin = props.spin;
+    this.spin = props.spin ? Math.random() / 2 : 0;
   }
 
   update(deltaTime: number) {
-    if (this.knockback) {
-      if (
-        Math.abs(this.knockback.x) < 0.01 &&
-        Math.abs(this.knockback.y) < 0.01
-      ) {
-        this.knockback = { x: 0, y: 0 };
-        return;
-      }
-      this.position.x += this.knockback.x * deltaTime;
-      this.position.y += this.knockback.y * deltaTime;
-      this.knockback.x *= 0.9;
-      this.knockback.y *= 0.9;
-
-      return;
+    if (this.timeout < 300) {
+      this.alpha = this.timeout / 300;
     }
 
-    if (
-      Math.abs(this.velocity.x) < 0.005 &&
-      Math.abs(this.velocity.y) < 0.005
-    ) {
+    if (Math.abs(this.velocity.x) < 0.05 && Math.abs(this.velocity.y) < 0.05) {
       this.velocity.x = 0;
       this.velocity.y = 0;
       return;
@@ -52,8 +39,8 @@ export class Projectile extends Sprite {
 
     if (this.spin) {
       this.rotation +=
+        this.spin *
         Math.max(Math.abs(this.velocity.x), Math.abs(this.velocity.y)) *
-        0.05 *
         deltaTime;
     }
 

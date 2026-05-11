@@ -1,4 +1,11 @@
-import { Application, Assets, Rectangle, Sprite } from "pixi.js";
+import {
+  Application,
+  Assets,
+  Container,
+  Rectangle,
+  Sprite,
+  Text,
+} from "pixi.js";
 import { Bug } from "./components/bug";
 import { Projectile } from "./components/projectile";
 import { lerp } from "./utils/lerp";
@@ -13,8 +20,13 @@ import { lerp } from "./utils/lerp";
   // Append the application canvas to the document body
   document.getElementById("pixi-container")?.appendChild(app.canvas);
 
-  const bugTexture = await Assets.load("/assets/bug.svg");
+  const rockTexture = await Assets.load("/assets/rock.png");
+  const rockContainer = new Container();
+  app.stage.addChild(rockContainer);
 
+  const bugTexture = await Assets.load("/assets/bug.svg");
+  const bugContainer = new Container();
+  app.stage.addChild(bugContainer);
   const bugs: Bug[] = [];
   const newBug = () => {
     const bug = new Bug(bugTexture, {
@@ -27,15 +39,13 @@ import { lerp } from "./utils/lerp";
       app.screen.width / 2 + Math.cos(angle) * (app.screen.width / 2 + 100),
       app.screen.height / 2 + Math.sin(angle) * (app.screen.height / 2 + 100),
     );
-    app.stage.addChild(bug);
+    bugContainer.addChild(bug);
     bugs.push(bug);
   };
 
   for (let i = 0; i < 5; i++) {
     newBug();
   }
-
-  const rockTexture = await Assets.load("/assets/rock.png");
 
   const playerTexture = await Assets.load("/assets/character.png");
   const player = new Sprite(playerTexture);
@@ -80,7 +90,7 @@ import { lerp } from "./utils/lerp";
         spin: true,
       });
       rock.position.set(player.x, player.y);
-      app.stage.addChild(rock);
+      rockContainer.addChild(rock);
       rocks.push(rock);
     }
 
@@ -90,6 +100,21 @@ import { lerp } from "./utils/lerp";
 
   const playerSpeed = 5;
   let score = 0;
+
+  const scoreContainer = new Container({
+    isRenderGroup: true,
+    x: 20,
+    y: 20,
+  });
+  const scoreText = new Text({
+    text: `Score: ${score}`,
+    style: {
+      fill: "#fff",
+      fontSize: 48,
+    },
+  });
+  scoreContainer.addChild(scoreText);
+  app.stage.addChild(scoreContainer);
 
   const keysDown = new Set<string>();
   document.addEventListener("keydown", (event) => {
@@ -149,17 +174,27 @@ import { lerp } from "./utils/lerp";
       bug.update(player.position, time.deltaTime);
     }
 
-    for (const rock of rocks) {
+    for (let r = rocks.length - 1; r >= 0; r--) {
+      const rock = rocks[r];
       rock.update(time.deltaTime);
+      if (rock.timeout <= 0) {
+        rocks.splice(r, 1);
+        rockContainer.removeChild(rock);
+        continue;
+      }
+      if (rock.velocity.x === 0 && rock.velocity.y === 0) {
+        rock.timeout -= time.deltaMS;
+        continue;
+      }
 
       for (let i = bugs.length - 1; i >= 0; i--) {
         const bug = bugs[i];
-        if (!rock.knockback && !bug.knockback && isColliding(rock, bug)) {
+        if (!bug.knockback && isColliding(rock, bug)) {
           const speed = Math.sqrt(
             rock.velocity.x * rock.velocity.x +
               rock.velocity.y * rock.velocity.y,
           );
-          rock.knockback = {
+          rock.velocity = {
             x: (rock.x - bug.x) * speed * 0.02,
             y: (rock.y - bug.y) * speed * 0.02,
           };
@@ -170,9 +205,8 @@ import { lerp } from "./utils/lerp";
           bug.hp -= lerp(1, 3, speed / 20);
         }
         if (!bug.knockback && bug.hp <= 0) {
-          score++;
-          console.log("Score:", score);
-          app.stage.removeChild(bug);
+          scoreText.text = `Score: ${++score}`;
+          bugContainer.removeChild(bug);
           bugs.splice(i, 1);
         }
       }
