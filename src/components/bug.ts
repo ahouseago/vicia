@@ -1,4 +1,4 @@
-import { Container, Point, Sprite, Texture } from "pixi.js";
+import { Container, Sprite, Texture } from "pixi.js";
 import { lerp } from "../utils/lerp";
 import { isColliding } from "../utils/collision";
 
