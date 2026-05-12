@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "dev": "vite"
   },
+  "packageManager": "pnpm@10.30.3",
   "dependencies": {
     "pixi.js": "^8.8.1"
   },
