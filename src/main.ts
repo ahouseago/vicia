@@ -16,17 +16,20 @@ import { isColliding } from "./utils/collision";
   // Create a new application
   const app = new Application();
 
+  // Initialize the asset loader with the base path for assets
+  await Assets.init({ basePath: import.meta.env.BASE_URL });
+
   // Initialize the application
   await app.init({ background: "#395f3f", resizeTo: window });
 
   // Append the application canvas to the document body
   document.getElementById("pixi-container")?.appendChild(app.canvas);
 
-  const rockTexture = await Assets.load("/assets/rock.png");
+  const rockTexture = await Assets.load("assets/rock.png");
   const rockContainer = new Container();
   app.stage.addChild(rockContainer);
 
-  const bugTexture = await Assets.load("/assets/bug.svg");
+  const bugTexture = await Assets.load("assets/bug.svg");
   const bugContainer = new Container();
   app.stage.addChild(bugContainer);
   const bugs: Bug[] = [];
@@ -49,7 +52,7 @@ import { isColliding } from "./utils/collision";
     newBug();
   }
 
-  const playerTexture = await Assets.load("/assets/character.png");
+  const playerTexture = await Assets.load("assets/character.png");
   const player = new Sprite(playerTexture);
   player.anchor.set(0.5);
   player.scale.set(0.25);
