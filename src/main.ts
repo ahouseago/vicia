@@ -15,15 +15,83 @@ import { isColliding } from "./utils/collision";
 (async () => {
   // Create a new application
   const app = new Application();
+  const appElement = document.getElementById("app");
+  const pixiContainer = document.getElementById("pixi-container");
+  const fullscreenButton = document.getElementById("fullscreen-button");
+
+  if (!appElement || !pixiContainer) {
+    throw new Error("Missing app container elements");
+  }
+
+  const getFullscreenElement = () =>
+    document.fullscreenElement ??
+    (document as Document & { webkitFullscreenElement?: Element })
+      .webkitFullscreenElement ??
+    null;
+
+  const setViewportHeight = () => {
+    const viewportHeight = getFullscreenElement()
+      ? window.innerHeight
+      : (window.visualViewport?.height ?? window.innerHeight);
+    appElement.style.setProperty("--app-height", `${viewportHeight}px`);
+  };
+  let viewportRefreshTimeouts: number[] = [];
+  let scheduleViewportRefresh = () => {
+    setViewportHeight();
+  };
+
+  const syncFullscreenButton = () => {
+    if (!fullscreenButton) {
+      return;
+    }
+
+    const fullscreenElement = getFullscreenElement();
+    fullscreenButton.textContent = fullscreenElement
+      ? "Exit Fullscreen"
+      : "Fullscreen";
+  };
+
+  const toggleFullscreen = async () => {
+    const fullscreenDoc = document as Document & {
+      webkitFullscreenElement?: Element;
+      webkitExitFullscreen?: () => Promise<void> | void;
+    };
+    const fullscreenTarget = appElement as HTMLElement & {
+      webkitRequestFullscreen?: () => Promise<void> | void;
+    };
+
+    if (document.fullscreenElement || fullscreenDoc.webkitFullscreenElement) {
+      await (document.exitFullscreen?.() ??
+        fullscreenDoc.webkitExitFullscreen?.());
+      return;
+    }
+
+    await (fullscreenTarget.requestFullscreen?.() ??
+      fullscreenTarget.webkitRequestFullscreen?.());
+  };
+
+  setViewportHeight();
+  syncFullscreenButton();
+  fullscreenButton?.addEventListener("click", () => {
+    void toggleFullscreen();
+  });
+  document.addEventListener("fullscreenchange", () => {
+    syncFullscreenButton();
+    scheduleViewportRefresh();
+  });
+  document.addEventListener("webkitfullscreenchange", (() => {
+    syncFullscreenButton();
+    scheduleViewportRefresh();
+  }) as EventListener);
 
   // Initialize the asset loader with the base path for assets
   await Assets.init({ basePath: import.meta.env.BASE_URL });
 
   // Initialize the application
-  await app.init({ background: "#395f3f", resizeTo: window });
+  await app.init({ background: "#395f3f", resizeTo: pixiContainer });
 
   // Append the application canvas to the document body
-  document.getElementById("pixi-container")?.appendChild(app.canvas);
+  pixiContainer.appendChild(app.canvas);
 
   const rockTexture = await Assets.load("assets/rock.png");
   const rockContainer = new Container();
@@ -33,6 +101,48 @@ import { isColliding } from "./utils/collision";
   const bugContainer = new Container();
   app.stage.addChild(bugContainer);
   const bugs: Bug[] = [];
+  const coarsePointerQuery = window.matchMedia("(any-pointer: coarse)");
+  let actorScaleMultiplier = 1;
+  let playerBaseScale = 0.25;
+  let touchPadRadius = 44;
+  let touchKnobRadius = 24;
+  let touchMaxRadius = 70;
+  let touchDeadzone = 10;
+  let touchFollowRadius = 90;
+
+  const updateResponsiveMetrics = () => {
+    const minDimension = Math.min(app.screen.width, app.screen.height);
+    const coarse = coarsePointerQuery.matches;
+    const nextActorScaleMultiplier = coarse
+      ? lerp(0.62, 0.88, Math.min(1, minDimension / 700))
+      : 1;
+    const scaleRatio = nextActorScaleMultiplier / actorScaleMultiplier;
+
+    actorScaleMultiplier = nextActorScaleMultiplier;
+    playerBaseScale = coarse
+      ? lerp(0.15, 0.21, Math.min(1, minDimension / 700))
+      : 0.25;
+    touchPadRadius = coarse
+      ? lerp(34, 44, Math.min(1, minDimension / 700))
+      : 44;
+    touchKnobRadius = touchPadRadius * 0.55;
+    touchMaxRadius = touchPadRadius * 1.6;
+    touchDeadzone = touchPadRadius * 0.22;
+    touchFollowRadius = touchPadRadius * 2;
+    player.scale.set(playerBaseScale);
+    scoreText.style.fontSize = coarse
+      ? lerp(26, 40, Math.min(1, app.screen.width / 700))
+      : 48;
+    scoreContainer.position.set(coarse ? 14 : 20, coarse ? 12 : 20);
+
+    for (const bug of bugs) {
+      bug.scale.set(bug.scale.x * scaleRatio, bug.scale.y * scaleRatio);
+    }
+    for (const rock of rocks) {
+      rock.scale.set(rock.scale.x * scaleRatio, rock.scale.y * scaleRatio);
+    }
+  };
+
   const newBug = () => {
     const bug = new Bug(bugTexture, {
       maxSpeed: 1,
@@ -43,6 +153,10 @@ import { isColliding } from "./utils/collision";
     bug.position.set(
       app.screen.width / 2 + Math.cos(angle) * (app.screen.width / 2 + 100),
       app.screen.height / 2 + Math.sin(angle) * (app.screen.height / 2 + 100),
+    );
+    bug.scale.set(
+      bug.scale.x * actorScaleMultiplier,
+      bug.scale.y * actorScaleMultiplier,
     );
     bugContainer.addChild(bug);
     bugs.push(bug);
@@ -55,7 +169,6 @@ import { isColliding } from "./utils/collision";
   const playerTexture = await Assets.load("assets/character.png");
   const player = new Sprite(playerTexture);
   player.anchor.set(0.5);
-  player.scale.set(0.25);
   player.position.set(app.screen.width / 2, app.screen.height / 2);
   app.stage.addChild(player);
 
@@ -68,17 +181,25 @@ import { isColliding } from "./utils/collision";
   let rotateCooldown = 0;
 
   const touchMoveHitArea = new Rectangle(
-    30,
-    Math.max(0, app.screen.height - 400),
-    app.screen.width / 3 - 30,
-    Math.min(app.screen.height, 400) - 30,
+    16,
+    Math.max(16, app.screen.height - 220),
+    Math.min(220, app.screen.width * 0.42),
+    Math.min(220, app.screen.height * 0.34),
   );
 
   const updateTouchMoveHitArea = () => {
-    touchMoveHitArea.x = 30;
-    touchMoveHitArea.y = Math.max(0, app.screen.height - 400);
-    touchMoveHitArea.width = app.screen.width / 3 - 30;
-    touchMoveHitArea.height = Math.min(app.screen.height, 400) - 30;
+    const margin = coarsePointerQuery.matches ? 16 : 24;
+    const desiredWidth = coarsePointerQuery.matches
+      ? Math.min(220, app.screen.width * 0.42)
+      : Math.min(260, app.screen.width * 0.3);
+    const desiredHeight = coarsePointerQuery.matches
+      ? Math.min(220, app.screen.height * 0.34)
+      : Math.min(260, app.screen.height * 0.38);
+
+    touchMoveHitArea.x = margin;
+    touchMoveHitArea.width = Math.max(120, desiredWidth);
+    touchMoveHitArea.height = Math.max(120, desiredHeight);
+    touchMoveHitArea.y = app.screen.height - touchMoveHitArea.height - margin;
   };
 
   app.stage.on("pointerdown", (event) => {
@@ -134,6 +255,10 @@ import { isColliding } from "./utils/collision";
         spin: true,
       });
       rock.position.set(player.x, player.y);
+      rock.scale.set(
+        rock.scale.x * actorScaleMultiplier,
+        rock.scale.y * actorScaleMultiplier,
+      );
       rockContainer.addChild(rock);
       rocks.push(rock);
     }
@@ -171,6 +296,8 @@ import { isColliding } from "./utils/collision";
   });
   scoreContainer.addChild(scoreText);
   app.stage.addChild(scoreContainer);
+  updateResponsiveMetrics();
+  updateTouchMoveHitArea();
 
   const gameOverOverlay = new Container({
     isRenderGroup: true,
@@ -243,6 +370,7 @@ import { isColliding } from "./utils/collision";
   };
 
   const updateResponsiveLayout = () => {
+    updateResponsiveMetrics();
     app.stage.hitArea = new Rectangle(
       0,
       0,
@@ -251,11 +379,48 @@ import { isColliding } from "./utils/collision";
     );
     updateTouchMoveHitArea();
     drawTouchMoveHint();
+    if (currentTouchStart) {
+      drawTouchControl();
+    }
     layoutGameOverOverlay();
   };
 
+  scheduleViewportRefresh = () => {
+    setViewportHeight();
+    app.resize();
+    updateResponsiveLayout();
+
+    for (const timeout of viewportRefreshTimeouts) {
+      window.clearTimeout(timeout);
+    }
+    viewportRefreshTimeouts = [
+      window.setTimeout(() => {
+        setViewportHeight();
+        app.resize();
+        updateResponsiveLayout();
+      }, 120),
+      window.setTimeout(() => {
+        setViewportHeight();
+        app.resize();
+        updateResponsiveLayout();
+      }, 320),
+    ];
+
+    window.requestAnimationFrame(() => {
+      setViewportHeight();
+      app.resize();
+      updateResponsiveLayout();
+    });
+  };
+
   layoutGameOverOverlay();
-  window.addEventListener("resize", updateResponsiveLayout);
+  new ResizeObserver(() => {
+    updateResponsiveLayout();
+  }).observe(pixiContainer);
+  window.visualViewport?.addEventListener("resize", scheduleViewportRefresh);
+  window.visualViewport?.addEventListener("scroll", scheduleViewportRefresh);
+  window.addEventListener("orientationchange", scheduleViewportRefresh);
+  window.addEventListener("resize", scheduleViewportRefresh);
 
   const keysDown = new Set<string>();
   document.addEventListener("keydown", (event) => {
@@ -303,8 +468,6 @@ import { isColliding } from "./utils/collision";
   app.stage.addChild(touchKnob);
 
   const finePointerQuery = window.matchMedia("(any-pointer: fine)");
-  const touchPadRadius = 44;
-  const touchKnobRadius = 24;
 
   const drawArrow = (
     graphics: Graphics,
@@ -482,15 +645,12 @@ import { isColliding } from "./utils/collision";
       return;
     }
 
-    const maxRadius = 70;
-    const deadzone = 10;
-    const followRadius = 90;
     let dx = x - currentTouchStart.x;
     let dy = y - currentTouchStart.y;
     const followDistance = Math.hypot(dx, dy);
 
-    if (followDistance > followRadius) {
-      const overflow = followDistance - followRadius;
+    if (followDistance > touchFollowRadius) {
+      const overflow = followDistance - touchFollowRadius;
       currentTouchStart.x += (dx / followDistance) * overflow;
       currentTouchStart.y += (dy / followDistance) * overflow;
       dx = x - currentTouchStart.x;
@@ -498,18 +658,18 @@ import { isColliding } from "./utils/collision";
     }
 
     const distance = Math.hypot(dx, dy);
-    if (distance <= deadzone) {
+    if (distance <= touchDeadzone) {
       touchIntent.x = 0;
       touchIntent.y = 0;
       drawTouchControl();
       return;
     }
 
-    const clampedDistance = Math.min(distance, maxRadius);
+    const clampedDistance = Math.min(distance, touchMaxRadius);
     const angle = Math.atan2(dy, dx);
     const strength = Math.min(
       1,
-      (clampedDistance - deadzone) / (maxRadius - deadzone),
+      (clampedDistance - touchDeadzone) / (touchMaxRadius - touchDeadzone),
     );
 
     touchIntent.x = Math.cos(angle) * strength;
