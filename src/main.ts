@@ -62,18 +62,50 @@ import { isColliding } from "./utils/collision";
   app.stage.eventMode = "static";
   app.stage.hitArea = new Rectangle(0, 0, app.screen.width, app.screen.height);
 
-  let pointerDownPosition: { x: number; y: number } | null = null;
+  const shootPointerDownPositions = new Map<number, { x: number; y: number }>();
+  let aimPointerDownPosition: { x: number; y: number } | null = null;
+  let activeAimPointerId: number | null = null;
   let rotateCooldown = 0;
+
+  const touchMoveHitArea = new Rectangle(
+    0,
+    Math.max(0, app.screen.height - 600),
+    app.screen.width / 3,
+    Math.min(app.screen.height, 600),
+  );
+
   app.stage.on("pointerdown", (event) => {
-    pointerDownPosition = { x: event.global.x, y: event.global.y };
+    if (
+      event.pointerType === "touch" &&
+      currentTouchId === null &&
+      touchMoveHitArea.contains(event.global.x, event.global.y)
+    ) {
+      return;
+    }
+
+    const pointerStart = {
+      x: event.global.x,
+      y: event.global.y,
+    };
+
+    shootPointerDownPositions.set(event.pointerId, pointerStart);
+    aimPointerDownPosition = pointerStart;
+    activeAimPointerId = event.pointerId;
   });
 
   const rocks: Projectile[] = [];
 
   // Use document listener to also fire on events outside canvas.
   document.addEventListener("pointerup", (event) => {
+    const pointerDownPosition = shootPointerDownPositions.get(event.pointerId);
     if (!pointerDownPosition) {
       return;
+    }
+
+    shootPointerDownPositions.delete(event.pointerId);
+    if (activeAimPointerId === event.pointerId) {
+      aimPointerDownPosition = null;
+      activeAimPointerId = null;
     }
 
     const dx = pointerDownPosition.x - event.x;
@@ -99,11 +131,23 @@ import { isColliding } from "./utils/collision";
       rocks.push(rock);
     }
 
-    pointerDownPosition = null;
     rotateCooldown = 20;
   });
 
-  const playerSpeed = 5;
+  document.addEventListener("pointercancel", (event) => {
+    shootPointerDownPositions.delete(event.pointerId);
+    if (activeAimPointerId === event.pointerId) {
+      aimPointerDownPosition = null;
+      activeAimPointerId = null;
+    }
+  });
+
+  const maxPlayerSpeed = 5;
+  const playerAcceleration = 0.18;
+  const playerDeceleration = 0.12;
+  const keyboardIntent = { x: 0, y: 0 };
+  const touchIntent = { x: 0, y: 0 };
+  const playerVelocity = { x: 0, y: 0 };
   let score = 0;
 
   const scoreContainer = new Container({
@@ -151,33 +195,177 @@ import { isColliding } from "./utils/collision";
   //   debugGraphics.stroke({ width: 2, color: colour });
   // };
 
-  const ticker = app.ticker.add((time) => {
-    if (keysDown.size > 0) {
-      for (const m of [
-        Movement.Up,
-        Movement.Down,
-        Movement.Left,
-        Movement.Right,
-      ]) {
-        if (!keysDown.has(movementKeys[m])) {
-          continue;
-        }
-        switch (m) {
-          case Movement.Up:
-            player.y -= playerSpeed * time.deltaTime;
-            break;
-          case Movement.Down:
-            player.y += playerSpeed * time.deltaTime;
-            break;
-          case Movement.Left:
-            player.x -= playerSpeed * time.deltaTime;
-            break;
-          case Movement.Right:
-            player.x += playerSpeed * time.deltaTime;
-            break;
-        }
-      }
+  const touchMoveContainer = new Container({
+    eventMode: "static",
+    hitArea: touchMoveHitArea,
+  });
+  app.stage.addChild(touchMoveContainer);
+
+  const touchTarget = new Graphics();
+  const touchKnob = new Graphics();
+  let currentTouchId: number | null = null;
+  let currentTouchStart: { x: number; y: number } | null = null;
+  app.stage.addChild(touchTarget);
+  app.stage.addChild(touchKnob);
+
+  const normaliseVector = (vector: { x: number; y: number }) => {
+    const length = Math.hypot(vector.x, vector.y);
+    if (length > 1) {
+      vector.x /= length;
+      vector.y /= length;
     }
+  };
+
+  const clearTouchMovement = () => {
+    touchTarget.clear();
+    touchKnob.clear();
+    currentTouchId = null;
+    currentTouchStart = null;
+    touchIntent.x = 0;
+    touchIntent.y = 0;
+  };
+
+  const drawTouchControl = (knobX?: number, knobY?: number) => {
+    if (!currentTouchStart) {
+      return;
+    }
+
+    touchTarget.clear();
+    touchTarget.circle(currentTouchStart.x, currentTouchStart.y, 30);
+    touchTarget.fill({ color: 0xffffff, alpha: 0.2 });
+    touchTarget.stroke({ color: 0xffffff, alpha: 0.5, width: 2 });
+
+    touchKnob.clear();
+    touchKnob.circle(
+      knobX ?? currentTouchStart.x,
+      knobY ?? currentTouchStart.y,
+      20,
+    );
+    touchKnob.fill({ color: 0xffffff, alpha: 0.45 });
+  };
+
+  const updateTouchIntent = (x: number, y: number) => {
+    if (!currentTouchStart) {
+      return;
+    }
+
+    const maxRadius = 70;
+    const deadzone = 10;
+    const followRadius = 90;
+    let dx = x - currentTouchStart.x;
+    let dy = y - currentTouchStart.y;
+    const followDistance = Math.hypot(dx, dy);
+
+    if (followDistance > followRadius) {
+      const overflow = followDistance - followRadius;
+      currentTouchStart.x += (dx / followDistance) * overflow;
+      currentTouchStart.y += (dy / followDistance) * overflow;
+      dx = x - currentTouchStart.x;
+      dy = y - currentTouchStart.y;
+    }
+
+    const distance = Math.hypot(dx, dy);
+    if (distance <= deadzone) {
+      touchIntent.x = 0;
+      touchIntent.y = 0;
+      drawTouchControl();
+      return;
+    }
+
+    const clampedDistance = Math.min(distance, maxRadius);
+    const angle = Math.atan2(dy, dx);
+    const strength = Math.min(
+      1,
+      (clampedDistance - deadzone) / (maxRadius - deadzone),
+    );
+
+    touchIntent.x = Math.cos(angle) * strength;
+    touchIntent.y = Math.sin(angle) * strength;
+
+    drawTouchControl(
+      currentTouchStart.x + Math.cos(angle) * clampedDistance,
+      currentTouchStart.y + Math.sin(angle) * clampedDistance,
+    );
+  };
+
+  touchMoveContainer.on("touchstart", (event) => {
+    if (currentTouchId !== null) {
+      return;
+    }
+    currentTouchId = event.pointerId;
+    currentTouchStart = { x: event.global.x, y: event.global.y };
+    drawTouchControl();
+  });
+  touchMoveContainer.on("globaltouchmove", (event) => {
+    if (
+      currentTouchId === null ||
+      currentTouchStart === null ||
+      event.pointerId !== currentTouchId
+    ) {
+      return;
+    }
+    updateTouchIntent(event.global.x, event.global.y);
+  });
+
+  const handleTouchEnd = (event: { pointerId: number }) => {
+    if (event.pointerId !== currentTouchId) {
+      return;
+    }
+    clearTouchMovement();
+  };
+
+  touchMoveContainer.on("touchend", handleTouchEnd);
+  touchMoveContainer.on("touchendoutside", handleTouchEnd);
+  touchMoveContainer.on("touchcancel", handleTouchEnd);
+
+  const ticker = app.ticker.add((time) => {
+    keyboardIntent.x = 0;
+    keyboardIntent.y = 0;
+
+    if (keysDown.has(movementKeys[Movement.Left])) {
+      keyboardIntent.x -= 1;
+    }
+    if (keysDown.has(movementKeys[Movement.Right])) {
+      keyboardIntent.x += 1;
+    }
+    if (keysDown.has(movementKeys[Movement.Up])) {
+      keyboardIntent.y -= 1;
+    }
+    if (keysDown.has(movementKeys[Movement.Down])) {
+      keyboardIntent.y += 1;
+    }
+
+    normaliseVector(keyboardIntent);
+
+    const moveIntent = {
+      x: keyboardIntent.x + touchIntent.x,
+      y: keyboardIntent.y + touchIntent.y,
+    };
+    normaliseVector(moveIntent);
+
+    const targetVelocity = {
+      x: moveIntent.x * maxPlayerSpeed,
+      y: moveIntent.y * maxPlayerSpeed,
+    };
+    const acceleration =
+      moveIntent.x === 0 && moveIntent.y === 0
+        ? playerDeceleration
+        : playerAcceleration;
+
+    playerVelocity.x +=
+      (targetVelocity.x - playerVelocity.x) * acceleration * time.deltaTime;
+    playerVelocity.y +=
+      (targetVelocity.y - playerVelocity.y) * acceleration * time.deltaTime;
+
+    if (Math.abs(playerVelocity.x) < 0.01) {
+      playerVelocity.x = 0;
+    }
+    if (Math.abs(playerVelocity.y) < 0.01) {
+      playerVelocity.y = 0;
+    }
+
+    player.x += playerVelocity.x * time.deltaTime;
+    player.y += playerVelocity.y * time.deltaTime;
 
     if (bugs.length < 10 && Math.random() < 0.01) {
       newBug();
@@ -262,10 +450,10 @@ import { isColliding } from "./utils/collision";
     if (rotateCooldown > 0) {
       rotateCooldown = Math.max(0, rotateCooldown - time.deltaTime);
     } else if (
-      !pointerDownPosition ||
+      !aimPointerDownPosition ||
       Math.sqrt(
-        (pointerDownPosition.x - pointerLocation.x) ** 2 +
-          (pointerDownPosition.y - pointerLocation.y) ** 2,
+        (aimPointerDownPosition.x - pointerLocation.x) ** 2 +
+          (aimPointerDownPosition.y - pointerLocation.y) ** 2,
       ) < 50
     ) {
       const target = app.renderer.events.pointer.global;
@@ -277,8 +465,8 @@ import { isColliding } from "./utils/collision";
     } else {
       const targetRotation =
         Math.atan2(
-          pointerDownPosition.y - pointerLocation.y,
-          pointerDownPosition.x - pointerLocation.x,
+          aimPointerDownPosition.y - pointerLocation.y,
+          aimPointerDownPosition.x - pointerLocation.x,
         ) -
         Math.PI / 2;
       const rawDiff = targetRotation - player.rotation;
