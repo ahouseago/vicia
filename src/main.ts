@@ -68,10 +68,10 @@ import { isColliding } from "./utils/collision";
   let rotateCooldown = 0;
 
   const touchMoveHitArea = new Rectangle(
-    0,
-    Math.max(0, app.screen.height - 600),
-    app.screen.width / 3,
-    Math.min(app.screen.height, 600),
+    30,
+    Math.max(0, app.screen.height - 400),
+    app.screen.width / 3 - 30,
+    Math.min(app.screen.height, 400) - 30,
   );
 
   app.stage.on("pointerdown", (event) => {
@@ -201,12 +201,109 @@ import { isColliding } from "./utils/collision";
   });
   app.stage.addChild(touchMoveContainer);
 
+  const touchHint = new Graphics({ eventMode: "none" });
   const touchTarget = new Graphics();
   const touchKnob = new Graphics();
   let currentTouchId: number | null = null;
   let currentTouchStart: { x: number; y: number } | null = null;
+  touchMoveContainer.addChild(touchHint);
   app.stage.addChild(touchTarget);
   app.stage.addChild(touchKnob);
+
+  const finePointerQuery = window.matchMedia("(any-pointer: fine)");
+  const touchPadRadius = 44;
+  const touchKnobRadius = 24;
+
+  const drawArrow = (
+    graphics: Graphics,
+    x: number,
+    y: number,
+    angle: number,
+    size: number,
+  ) => {
+    const tipX = x + Math.cos(angle) * size;
+    const tipY = y + Math.sin(angle) * size;
+    const backX = x - Math.cos(angle) * size * 0.45;
+    const backY = y - Math.sin(angle) * size * 0.45;
+    const wingAngle = Math.PI / 2;
+    const wingSize = size * 0.55;
+
+    graphics.moveTo(tipX, tipY);
+    graphics.lineTo(
+      backX + Math.cos(angle + wingAngle) * wingSize,
+      backY + Math.sin(angle + wingAngle) * wingSize,
+    );
+    graphics.lineTo(
+      backX + Math.cos(angle - wingAngle) * wingSize,
+      backY + Math.sin(angle - wingAngle) * wingSize,
+    );
+    graphics.closePath();
+  };
+
+  const drawDirectionalPad = (
+    graphics: Graphics,
+    centerX: number,
+    centerY: number,
+    radius: number,
+    baseAlpha: number,
+    arrowAlpha: number,
+  ) => {
+    graphics.circle(centerX, centerY, radius);
+    graphics.fill({ color: 0xffffff, alpha: baseAlpha });
+    graphics.stroke({
+      color: 0xffffff,
+      alpha: Math.min(baseAlpha + 0.18, 0.6),
+      width: 2,
+    });
+
+    drawArrow(
+      graphics,
+      centerX,
+      centerY - radius * 0.45,
+      -Math.PI / 2,
+      radius * 0.32,
+    );
+    drawArrow(graphics, centerX + radius * 0.45, centerY, 0, radius * 0.32);
+    drawArrow(
+      graphics,
+      centerX,
+      centerY + radius * 0.45,
+      Math.PI / 2,
+      radius * 0.32,
+    );
+    drawArrow(
+      graphics,
+      centerX - radius * 0.45,
+      centerY,
+      Math.PI,
+      radius * 0.32,
+    );
+    graphics.fill({ color: 0xffffff, alpha: arrowAlpha });
+  };
+
+  const drawTouchMoveHint = () => {
+    touchHint.clear();
+    touchHint.visible = !finePointerQuery.matches;
+    touchHint.alpha = currentTouchId === null ? 1 : 0.2;
+
+    if (finePointerQuery.matches) {
+      return;
+    }
+
+    const { x, y, width, height } = touchMoveHitArea;
+    const centerX = x + width / 2;
+    const centerY = y + height / 2;
+    const outlineRadius = touchPadRadius + 18;
+
+    touchHint.circle(centerX, centerY, outlineRadius);
+    touchHint.fill({ color: 0x102218, alpha: 0.18 });
+    touchHint.stroke({ color: 0xffffff, alpha: 0.18, width: 2 });
+
+    drawDirectionalPad(touchHint, centerX, centerY, touchPadRadius, 0.07, 0.22);
+  };
+
+  drawTouchMoveHint();
+  finePointerQuery.addEventListener("change", drawTouchMoveHint);
 
   const normaliseVector = (vector: { x: number; y: number }) => {
     const length = Math.hypot(vector.x, vector.y);
@@ -223,6 +320,7 @@ import { isColliding } from "./utils/collision";
     currentTouchStart = null;
     touchIntent.x = 0;
     touchIntent.y = 0;
+    drawTouchMoveHint();
   };
 
   const drawTouchControl = (knobX?: number, knobY?: number) => {
@@ -231,15 +329,20 @@ import { isColliding } from "./utils/collision";
     }
 
     touchTarget.clear();
-    touchTarget.circle(currentTouchStart.x, currentTouchStart.y, 30);
-    touchTarget.fill({ color: 0xffffff, alpha: 0.2 });
-    touchTarget.stroke({ color: 0xffffff, alpha: 0.5, width: 2 });
+    drawDirectionalPad(
+      touchTarget,
+      currentTouchStart.x,
+      currentTouchStart.y,
+      touchPadRadius,
+      0.2,
+      0.45,
+    );
 
     touchKnob.clear();
     touchKnob.circle(
       knobX ?? currentTouchStart.x,
       knobY ?? currentTouchStart.y,
-      20,
+      touchKnobRadius,
     );
     touchKnob.fill({ color: 0xffffff, alpha: 0.45 });
   };
@@ -294,6 +397,7 @@ import { isColliding } from "./utils/collision";
     }
     currentTouchId = event.pointerId;
     currentTouchStart = { x: event.global.x, y: event.global.y };
+    drawTouchMoveHint();
     drawTouchControl();
   });
   touchMoveContainer.on("globaltouchmove", (event) => {
