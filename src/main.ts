@@ -761,7 +761,7 @@ import { isColliding } from "./utils/collision";
     player.x += playerVelocity.x * time.deltaTime;
     player.y += playerVelocity.y * time.deltaTime;
 
-    if (bugs.length < 10 && Math.random() < 0.01) {
+    if (bugs.length < score + 10 && Math.random() < 0.01) {
       newBug();
     }
 
