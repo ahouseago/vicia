@@ -74,6 +74,13 @@ import { isColliding } from "./utils/collision";
     Math.min(app.screen.height, 400) - 30,
   );
 
+  const updateTouchMoveHitArea = () => {
+    touchMoveHitArea.x = 30;
+    touchMoveHitArea.y = Math.max(0, app.screen.height - 400);
+    touchMoveHitArea.width = app.screen.width / 3 - 30;
+    touchMoveHitArea.height = Math.min(app.screen.height, 400) - 30;
+  };
+
   app.stage.on("pointerdown", (event) => {
     if (
       event.pointerType === "touch" &&
@@ -164,6 +171,91 @@ import { isColliding } from "./utils/collision";
   });
   scoreContainer.addChild(scoreText);
   app.stage.addChild(scoreContainer);
+
+  const gameOverOverlay = new Container({
+    isRenderGroup: true,
+    visible: false,
+  });
+  const gameOverBackdrop = new Graphics();
+  const gameOverText = new Text({
+    text: "",
+    style: {
+      fill: "#102218",
+      fontSize: 48,
+      align: "center",
+    },
+  });
+  const resetButton = new Container({
+    eventMode: "static",
+    cursor: "pointer",
+  });
+  const resetButtonBg = new Graphics();
+  const resetButtonText = new Text({
+    text: "Reset",
+    style: {
+      fill: "#fff",
+      fontSize: 28,
+    },
+  });
+  resetButtonText.anchor.set(0.5);
+  resetButton.addChild(resetButtonBg);
+  resetButton.addChild(resetButtonText);
+  gameOverOverlay.addChild(gameOverBackdrop);
+  gameOverOverlay.addChild(gameOverText);
+  gameOverOverlay.addChild(resetButton);
+  app.stage.addChild(gameOverOverlay);
+
+  const layoutGameOverOverlay = () => {
+    const width = Math.min(500, app.screen.width - 20);
+    const height = Math.min(320, app.screen.height - 20);
+    const left = app.screen.width / 2 - width / 2;
+    const top = app.screen.height / 2 - height / 2;
+
+    gameOverBackdrop.clear();
+    gameOverBackdrop.roundRect(left, top, width, height, 24);
+    gameOverBackdrop.fill({ color: 0xf2eddc, alpha: 0.92 });
+    gameOverBackdrop.stroke({ color: 0x102218, alpha: 0.25, width: 3 });
+
+    gameOverText.style.fontSize = lerp(20, 56, width / 500);
+    gameOverText.anchor.set(0.5);
+    gameOverText.position.set(app.screen.width / 2, top + height * 0.38);
+
+    const buttonWidth = Math.min(220, width - 80);
+    const buttonHeight = 58;
+    resetButtonBg.clear();
+    resetButtonBg.roundRect(
+      -buttonWidth / 2,
+      -buttonHeight / 2,
+      buttonWidth,
+      buttonHeight,
+      18,
+    );
+    resetButtonBg.fill({ color: 0x2f5740 });
+    resetButtonBg.stroke({ color: 0xffffff, alpha: 0.25, width: 2 });
+    resetButton.hitArea = new Rectangle(
+      -buttonWidth / 2,
+      -buttonHeight / 2,
+      buttonWidth,
+      buttonHeight,
+    );
+    resetButton.position.set(app.screen.width / 2, top + height * 0.74);
+    resetButtonText.position.set(0, 2);
+  };
+
+  const updateResponsiveLayout = () => {
+    app.stage.hitArea = new Rectangle(
+      0,
+      0,
+      app.screen.width,
+      app.screen.height,
+    );
+    updateTouchMoveHitArea();
+    drawTouchMoveHint();
+    layoutGameOverOverlay();
+  };
+
+  layoutGameOverOverlay();
+  window.addEventListener("resize", updateResponsiveLayout);
 
   const keysDown = new Set<string>();
   document.addEventListener("keydown", (event) => {
@@ -323,6 +415,44 @@ import { isColliding } from "./utils/collision";
     drawTouchMoveHint();
   };
 
+  const resetGameState = () => {
+    gameOverOverlay.visible = false;
+    score = 0;
+    scoreText.text = `Score: ${score}`;
+    player.position.set(app.screen.width / 2, app.screen.height / 2);
+    player.rotation = 0;
+    playerVelocity.x = 0;
+    playerVelocity.y = 0;
+    keyboardIntent.x = 0;
+    keyboardIntent.y = 0;
+    touchIntent.x = 0;
+    touchIntent.y = 0;
+    keysDown.clear();
+    shootPointerDownPositions.clear();
+    aimPointerDownPosition = null;
+    activeAimPointerId = null;
+    rotateCooldown = 0;
+    clearTouchMovement();
+
+    for (const rock of rocks) {
+      rockContainer.removeChild(rock);
+    }
+    rocks.length = 0;
+
+    for (const bug of bugs) {
+      bugContainer.removeChild(bug);
+    }
+    bugs.length = 0;
+
+    for (let i = 0; i < 5; i++) {
+      newBug();
+    }
+
+    ticker.start();
+  };
+
+  resetButton.on("pointertap", resetGameState);
+
   const drawTouchControl = (knobX?: number, knobY?: number) => {
     if (!currentTouchStart) {
       return;
@@ -478,35 +608,10 @@ import { isColliding } from "./utils/collision";
     for (const bug of bugs) {
       bug.update(player, time.deltaTime);
       if (isColliding(player, bug)) {
-        // Reset game
         ticker.stop();
-        const scoreGraphic = new Graphics();
-        const width = Math.min(500, app.screen.width - 20);
-        const height = Math.min(300, app.screen.height - 20);
-        scoreGraphic.rect(
-          app.screen.width / 2 - width / 2,
-          app.screen.height / 2 - height / 2,
-          width,
-          height,
-        );
-        scoreGraphic.fill({ color: 0xffffff, alpha: 0.6 });
-        app.stage.addChild(scoreGraphic);
-
-        const finalScoreText = new Text({
-          text: `Game Over!\nFinal Score: ${score}`,
-          style: {
-            fill: "#000",
-            fontSize: lerp(16, 64, width / 500),
-            align: "center",
-          },
-        });
-        finalScoreText.anchor.set(0.5);
-        finalScoreText.position.set(
-          app.screen.width / 2,
-          app.screen.height / 2,
-        );
-        app.stage.addChild(finalScoreText);
-
+        gameOverText.text = `Game Over!\nFinal Score: ${score}`;
+        layoutGameOverOverlay();
+        gameOverOverlay.visible = true;
         return;
       }
     }
